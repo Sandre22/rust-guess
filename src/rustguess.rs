@@ -108,17 +108,17 @@ impl file::Operations for RustGuessDevice {
         pr_info!("rustguess: tries={}, won={}\n", state.tries, state.won);
         Ok(len)
     }
-}
+    fn read(this: &Self, _file: &file::File, data: &mut impl IoBufferWriter) -> Result<usize> {
+        let mut state = this.state.lock();
 
-fn read(this: &Self, _file: &file::File, data: &mut impl IoBufferWriter) -> Result<usize> {
-    let mut state = this.state.lock();
+        if state.consumed {
+            return Ok(0);
+        }
 
-    if state.consumed {
-        return Ok(0);
+        let to_write = core::cmp::min(data.len(), state.last_message.len());
+        data.write_slice(&state.last_message[..to_write])?;
+        state.consumed = true;
+        Ok(to_write)
     }
-
-    let to_write = core::cmp::min(data.len(), state.last_message.len());
-    data.write_slice(&state.last_message[..to_write])?;
-    state.consumed = true;
-    Ok(to_write)
 }
+
