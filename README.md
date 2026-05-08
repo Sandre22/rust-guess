@@ -2,8 +2,8 @@
 
 **rustguess** is a Linux kernel module that runs a number-guessing game at /dev/rustguess — a small example of stateful, user-driven protocols at Ring 0, written entirely in safe Rust. The state machine is mutex-protected; malformed input is handled with a polite error message rather than a kernel panic.
 
-## DEMO (Complete Later)
-```
+## Demo
+```bash
 make clean && make
 sudo insmod rustguess.ko
 ls -la /dev/rustguess
@@ -24,8 +24,75 @@ sudo cat /dev/rustguess                       # welcome message again
 sudo rmmod rustguess
 ```
 
-### Build-and-Run
+## Build-and-Run
+**Requirements:** *A Linux VM with a Rust-enabled kernel (Ubuntu 26.04 LTS recommended). Do not run kernel modules on your host machine.*
 
+### Setup
+If you don't already have a VM:
+```bash
+multipass launch --name rustguess lts
+multipass shell rustguess
+```
+Install the required toolchain inside the VM:
+```bash
+sudo apt update
+sudo apt install -y build-essential linux-headers-$(uname -r) kmod
+sudo apt install -y rustc-1.93 rust-1.93-src bindgen
+sudo update-alternatives --install /usr/bin/rustc rustc /usr/bin/rustc-1.93 100
+```
+
+### Build
+```bash
+git clone https://github.com/Sandre22/rust-guess.git
+cd rustguess
+make
+```
+You should see a *rustguess.ko* file appear in the directory.
+
+### Load the Module
+```bash
+sudo insmod rustguess.ko
+sudo dmesg | tail -3
+# → rustguess: module loaded (secret picked, get guessing!)
+```
+
+#### Play the Game!
+```bash
+sudo cat /dev/rustguess
+# → Welcome! Guess a number between 1 and 100. ...
+
+echo 50 | sudo tee /dev/rustguess > /dev/null
+sudo cat /dev/rustguess
+# → 50 is too high — guess lower.
+
+echo 25 | sudo tee /dev/rustguess > /dev/null
+sudo cat /dev/rustguess
+# → 25 is too low — guess higher.
+
+echo 42 | sudo tee /dev/rustguess > /dev/null
+sudo cat /dev/rustguess
+# → Correct! You got it in 3 tries.
+```
+once you've won, further guesses return:
+
+```bash
+echo 10 | sudo tee /dev/rustguess > /dev/null
+sudo cat /dev/rustguess
+# → You already won! `rmmod rustguess && insmod rustguess.ko` to play again.
+```
+
+### Unload the Module
+```bash
+sudo rmmod rustguess
+sudo dmesg | tail -3
+# → rustguess: module unloaded (game ended)
+```
+
+#### Clean Build Artifacts
+```bash
+make clean
+```
+**Note:** */dev/rustguess is owned by root (0600), so every read and write needs sudo. The sudo tee ... > /dev/null pattern is required for writes because a plain sudo echo "..." > /dev/rustguess won't work — the shell evaluates the redirect before sudo runs.*
 
 ## Design Notes
 RustGuess stores all game states in a single Mutex<GameState> field on the RustGuessDevice struct, which is registered as a misc device at module load time via miscdev::Registration::new_pinned. Because the device is a singleton and the mutex lives on the device struct directly, every open of RustGuess shares the same in-progress game.
